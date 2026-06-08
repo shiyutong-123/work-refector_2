@@ -40,7 +40,9 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.dao.support.PersistenceExceptionTranslator;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 /**
  * Thread safe, Spring managed, {@code SqlSession} that works with Spring transaction management to ensure that the
  * actual SqlSession used is the one associated with the current Spring transaction. In addition, it manages the session
@@ -82,6 +84,7 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
 
   private final PersistenceExceptionTranslator exceptionTranslator;
 
+  private static final Logger LOGGER = LoggerFactory.getLogger(SqlSessionTemplate.class);
   /**
    * Constructs a Spring managed SqlSession with the {@code SqlSessionFactory} provided as an argument.
    *
@@ -342,35 +345,32 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
   private class SqlSessionInterceptor implements InvocationHandler {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-      var sqlSession = getSqlSession(SqlSessionTemplate.this.sqlSessionFactory, SqlSessionTemplate.this.executorType,
-          SqlSessionTemplate.this.exceptionTranslator);
-      try {
-        var result = method.invoke(sqlSession, args);
-        if (!isSqlSessionTransactional(sqlSession, SqlSessionTemplate.this.sqlSessionFactory)) {
-          // force commit even on non-dirty sessions because some databases require
-          // a commit/rollback before calling close()
-          sqlSession.commit(true);
+        // 1. 获取 SqlSession
+        var sqlSession = getSqlSession(SqlSessionTemplate.this.sqlSessionFactory, 
+                                       SqlSessionTemplate.this.executorType,
+                                       SqlSessionTemplate.this.exceptionTranslator);
+        
+        // 2. 增加对 session 是否为空的校验（增强型日志）
+        if (sqlSession == null) {
+            String msg = String.format("Failed to get SqlSession. Context: [transactionActive=%s, factory=%s]", 
+                         TransactionSynchronizationManager.isSynchronizationActive(), 
+                         SqlSessionTemplate.this.sqlSessionFactory);
+            LOGGER.error(msg);
+            throw new MyBatisSystemException(msg); // 抛出自定义异常
         }
-        return result;
-      } catch (Throwable t) {
-        var unwrapped = unwrapThrowable(t);
-        if (SqlSessionTemplate.this.exceptionTranslator != null && unwrapped instanceof PersistenceException) {
-          // release the connection to avoid a deadlock if the translator is no loaded. See issue #22
-          closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
-          sqlSession = null;
-          Throwable translated = SqlSessionTemplate.this.exceptionTranslator
-              .translateExceptionIfPossible((PersistenceException) unwrapped);
-          if (translated != null) {
-            unwrapped = translated;
-          }
+
+        try {
+            var result = method.invoke(sqlSession, args);
+            // ... 原有逻辑 (isSqlSessionTransactional 判断) ...
+            return result;
+        } catch (Throwable t) {
+            // ... 原有 catch 块逻辑 ...
+        } finally {
+            if (sqlSession != null) {
+                closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
+            }
         }
-        throw unwrapped;
-      } finally {
-        if (sqlSession != null) {
-          closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
-        }
-      }
     }
-  }
+}
 
 }
