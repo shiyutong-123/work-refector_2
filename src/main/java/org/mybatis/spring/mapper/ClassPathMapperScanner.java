@@ -41,6 +41,7 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
 import org.springframework.core.NativeDetector;
 import org.springframework.core.env.Environment;
+import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
@@ -424,7 +425,13 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
 
   @Override
   protected boolean isCandidateComponent(AnnotatedBeanDefinition beanDefinition) {
-    return beanDefinition.getMetadata().isInterface() && beanDefinition.getMetadata().isIndependent();
+    // 获取类的元数据
+    AnnotationMetadata metadata = beanDefinition.getMetadata();
+    
+    // 逻辑：必须是接口且独立，且不能包含 @NoMapper 注解
+    boolean isNotNoMapper = !metadata.hasAnnotation("org.mybatis.spring.annotation.NoMapper");
+    
+    return metadata.isInterface() && metadata.isIndependent() && isNotNoMapper;
   }
 
   private boolean shouldUseClassConstructorArgument(Class<? extends MapperFactoryBean> mapperFactoryBeanClass) {

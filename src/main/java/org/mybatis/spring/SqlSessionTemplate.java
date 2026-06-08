@@ -40,9 +40,13 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.dao.support.PersistenceExceptionTranslator;
+<<<<<<< HEAD
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+=======
+
+>>>>>>> 904fd359491a0c18b0ad5316dc1e7e752ca32780
 /**
  * Thread safe, Spring managed, {@code SqlSession} that works with Spring transaction management to ensure that the
  * actual SqlSession used is the one associated with the current Spring transaction. In addition, it manages the session
@@ -84,7 +88,10 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
 
   private final PersistenceExceptionTranslator exceptionTranslator;
 
+<<<<<<< HEAD
   private static final Logger LOGGER = LoggerFactory.getLogger(SqlSessionTemplate.class);
+=======
+>>>>>>> 904fd359491a0c18b0ad5316dc1e7e752ca32780
   /**
    * Constructs a Spring managed SqlSession with the {@code SqlSessionFactory} provided as an argument.
    *
@@ -345,6 +352,7 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
   private class SqlSessionInterceptor implements InvocationHandler {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+<<<<<<< HEAD
         // 1. 获取 SqlSession
         var sqlSession = getSqlSession(SqlSessionTemplate.this.sqlSessionFactory, 
                                        SqlSessionTemplate.this.executorType,
@@ -372,5 +380,37 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
         }
     }
 }
+=======
+      var sqlSession = getSqlSession(SqlSessionTemplate.this.sqlSessionFactory, SqlSessionTemplate.this.executorType,
+          SqlSessionTemplate.this.exceptionTranslator);
+      try {
+        var result = method.invoke(sqlSession, args);
+        if (!isSqlSessionTransactional(sqlSession, SqlSessionTemplate.this.sqlSessionFactory)) {
+          // force commit even on non-dirty sessions because some databases require
+          // a commit/rollback before calling close()
+          sqlSession.commit(true);
+        }
+        return result;
+      } catch (Throwable t) {
+        var unwrapped = unwrapThrowable(t);
+        if (SqlSessionTemplate.this.exceptionTranslator != null && unwrapped instanceof PersistenceException) {
+          // release the connection to avoid a deadlock if the translator is no loaded. See issue #22
+          closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
+          sqlSession = null;
+          Throwable translated = SqlSessionTemplate.this.exceptionTranslator
+              .translateExceptionIfPossible((PersistenceException) unwrapped);
+          if (translated != null) {
+            unwrapped = translated;
+          }
+        }
+        throw unwrapped;
+      } finally {
+        if (sqlSession != null) {
+          closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
+        }
+      }
+    }
+  }
+>>>>>>> 904fd359491a0c18b0ad5316dc1e7e752ca32780
 
 }
